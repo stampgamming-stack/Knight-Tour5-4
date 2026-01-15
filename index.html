@@ -276,6 +276,70 @@
             try { runAuto(); } catch (e) { alert(e); }
         }
 
+        // Backtracking solver - ใช้เมื่อ heuristic หาไม่เจอ
+        function solveBacktrack(C, target, tryCycle) {
+            const vis = Array.from({ length: R }, () => Array(C).fill(false));
+            cuts.forEach(([x, y]) => vis[x][y] = true);
+
+            const p = [start.slice()];
+            vis[start[0]][start[1]] = true;
+
+            let foundPath = null;
+            let foundCycle = null;
+
+            function backtrack() {
+                if (foundCycle) return; // ถ้าหา cycle เจอแล้วหยุด
+
+                if (p.length === target) {
+                    // เจอ path แล้ว
+                    if (tryCycle && isCycle(p)) {
+                        foundCycle = p.map(pt => pt.slice());
+                        return;
+                    }
+                    if (!foundPath) {
+                        foundPath = p.map(pt => pt.slice());
+                    }
+                    return;
+                }
+
+                const [x, y] = p[p.length - 1];
+
+                // สร้าง list ของ moves ที่เป็นไปได้ พร้อม Warnsdorff degree
+                let opts = [];
+                for (const [dx, dy] of moves) {
+                    const nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && nx < R && ny >= 0 && ny < C && !vis[nx][ny]) {
+                        let deg = 0;
+                        for (const [dx2, dy2] of moves) {
+                            const x2 = nx + dx2, y2 = ny + dy2;
+                            if (x2 >= 0 && x2 < R && y2 >= 0 && y2 < C && !vis[x2][y2]) deg++;
+                        }
+                        opts.push({ nx, ny, deg });
+                    }
+                }
+
+                // เรียงตาม Warnsdorff (degree น้อยก่อน) เพื่อ prune เร็วขึ้น
+                opts.sort((a, b) => a.deg - b.deg);
+
+                for (const { nx, ny } of opts) {
+                    p.push([nx, ny]);
+                    vis[nx][ny] = true;
+
+                    backtrack();
+
+                    if (foundCycle) return; // หา cycle เจอแล้วหยุดเลย
+                    if (!tryCycle && foundPath) return; // ถ้าไม่ต้องการ cycle และหา path เจอแล้วหยุด
+
+                    p.pop();
+                    vis[nx][ny] = false;
+                }
+            }
+
+            backtrack();
+
+            return foundCycle || foundPath;
+        }
+
         function runAuto() {
             readInputs();
             applied = false; // เผื่อเคยอยู่ manual
@@ -287,6 +351,7 @@
             let bestAny = null;
             let bestCycle = null;
 
+            // Phase 1: ลอง Warnsdorff heuristic ก่อน (เร็ว)
             for (let r = 0; r < MAX_ROUNDS; r++) {
                 const vis = Array.from({ length: R }, () => Array(C).fill(false));
                 cuts.forEach(([x, y]) => vis[x][y] = true);
@@ -337,6 +402,30 @@
                     bestAny = p;
                     break;
                 }
+            }
+
+            // Phase 2: ถ้า heuristic ยังหาไม่เจอ ใช้ backtracking
+            const heuristicSuccess = (tryCycle && bestCycle) || (!tryCycle && bestAny && bestAny.length === target);
+
+            if (!heuristicSuccess) {
+                info.textContent = "กำลังค้นหาด้วย backtracking...";
+                // ใช้ setTimeout เพื่อให้ UI อัพเดตก่อน
+                setTimeout(() => {
+                    const backtrackResult = solveBacktrack(C, target, tryCycle);
+                    if (backtrackResult) {
+                        if (isCycle(backtrackResult)) {
+                            bestCycle = backtrackResult;
+                        } else {
+                            bestAny = backtrackResult;
+                        }
+                    }
+
+                    path = (tryCycle && bestCycle) ? bestCycle : (bestAny || []);
+                    step = 0;
+                    finished = false;
+                    drawStep();
+                }, 10);
+                return;
             }
 
             path = (tryCycle && bestCycle) ? bestCycle : (bestAny || []);
@@ -539,5 +628,6 @@
         draw();
     </script>
 </body>
+
 
 </html>
