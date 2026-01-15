@@ -257,6 +257,11 @@
             return isKnightMove(p[0], p[p.length - 1]);
         }
 
+        // เช็คว่าเป็น complete Hamiltonian cycle (ครบทุกช่อง + ปิดวงได้)
+        function isCompleteCycle(p, target) {
+            return p.length === target && isCycle(p);
+        }
+
         function targetCount() {
             return R * (+cols.value) - cuts.length;
         }
@@ -276,7 +281,7 @@
             try { runAuto(); } catch (e) { alert(e); }
         }
 
-        // Backtracking solver - ใช้เมื่อ heuristic หาไม่เจอ
+        // Backtracking solver - ใช้เมื่อ heuristic หาไม่เจอ (มี limit เพื่อไม่ให้ค้าง)
         function solveBacktrack(C, target, tryCycle) {
             const vis = Array.from({ length: R }, () => Array(C).fill(false));
             cuts.forEach(([x, y]) => vis[x][y] = true);
@@ -287,7 +292,13 @@
             let foundPath = null;
             let foundCycle = null;
 
+            // จำกัด iterations เพื่อไม่ให้ browser ค้าง
+            const MAX_ITERATIONS = C <= 8 ? 5000000 : (C <= 10 ? 2000000 : 500000);
+            let iterations = 0;
+
             function backtrack() {
+                iterations++;
+                if (iterations > MAX_ITERATIONS) return; // หยุดถ้าเกิน limit
                 if (foundCycle) return; // ถ้าหา cycle เจอแล้วหยุด
 
                 if (p.length === target) {
@@ -327,6 +338,7 @@
 
                     backtrack();
 
+                    if (iterations > MAX_ITERATIONS) return; // หยุดถ้าเกิน limit
                     if (foundCycle) return; // หา cycle เจอแล้วหยุดเลย
                     if (!tryCycle && foundPath) return; // ถ้าไม่ต้องการ cycle และหา path เจอแล้วหยุด
 
@@ -345,7 +357,8 @@
             applied = false; // เผื่อเคยอยู่ manual
             const C = +cols.value;
             const tryCycle = shouldTryCycle(C, cuts);
-            const MAX_ROUNDS = tryCycle ? 12000 : 4000;
+            // เพิ่ม MAX_ROUNDS สำหรับกระดานใหญ่เพื่อให้ heuristic มีโอกาสหาเจอมากขึ้น
+            const MAX_ROUNDS = C >= 11 ? 50000 : (tryCycle ? 20000 : 8000);
             const target = R * C - cuts.length;
 
             let bestAny = null;
@@ -404,10 +417,10 @@
                 }
             }
 
-            // Phase 2: ถ้า heuristic ยังหาไม่เจอ ใช้ backtracking
+            // Phase 2: ถ้า heuristic ยังหาไม่เจอ ใช้ backtracking (เฉพาะกระดานเล็ก n <= 10)
             const heuristicSuccess = (tryCycle && bestCycle) || (!tryCycle && bestAny && bestAny.length === target);
 
-            if (!heuristicSuccess) {
+            if (!heuristicSuccess && C <= 10) {
                 info.textContent = "กำลังค้นหาด้วย backtracking...";
                 // ใช้ setTimeout เพื่อให้ UI อัพเดตก่อน
                 setTimeout(() => {
@@ -554,8 +567,9 @@
                 svg.appendChild(l);
             }
 
-            // เส้นแดง: เฉพาะถ้าเป็น cycle จริง (ตามที่ตกลง)
-            if (path.length && isCycle(path)) {
+            // เส้นแดง: เฉพาะถ้าเป็น complete cycle จริง (ครบทุกช่อง + ปิดวงได้)
+            const target = targetCount();
+            if (path.length && isCompleteCycle(path, target)) {
                 const [sr, sc] = path[0];
                 const [er, ec] = path[path.length - 1];
                 const l = document.createElementNS(svg.namespaceURI, "line");
@@ -569,7 +583,6 @@
             }
 
             // INFO/RESULT
-            const target = targetCount();
 
             if (manualMode) {
                 info.textContent = applied ? `เดินแล้ว ${path.length}/${target} ช่อง` : `โหมด MANUAL: กด Apply ก่อนเดิน`;
@@ -579,10 +592,13 @@
                     result.textContent = "";
                 }
             } else {
-                info.textContent = `Step ${step}/${Math.max(0, path.length - 1)}`;
+                info.textContent = `Step ${step}/${Math.max(0, path.length - 1)} | เดิน ${path.length}/${target} ช่อง`;
                 if (path.length && step === path.length - 1) {
-                    // เอาเหลืองออกไปแล้ว: เขียว/แดงพอ
-                    result.textContent = isCycle(path) ? "🟢 ปิดวงได้" : "🔴 ไม่ปิดวง";
+                    if (path.length === target) {
+                        result.textContent = isCycle(path) ? "🟢 ครบทุกช่อง และปิดวงได้" : "🔴 ครบทุกช่อง แต่ไม่ปิดวง";
+                    } else {
+                        result.textContent = `🟡 หาได้ ${path.length}/${target} ช่อง (ไม่ครบ)`;
+                    }
                 } else {
                     result.textContent = "";
                 }
